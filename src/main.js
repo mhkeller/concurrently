@@ -209,7 +209,8 @@ function run(commands) {
         // Split the command up in the command path and its arguments.
         var parts = separateCmdArgs(cmd);
 
-        var spawnOpts = config.raw ? {stdio: 'inherit'} : {};
+        var stdio = config.raw ? 'inherit' : null
+        var spawnOpts = {stdio: [stdio, stdio, stdio, 'ipc']}
         if (isWindows) {
             spawnOpts.detached = false;
         }
@@ -241,7 +242,8 @@ function run(commands) {
     var streams = _.map(children, function(child) {
         var childStreams = {
             error: Rx.Node.fromEvent(child, 'error'),
-            close: Rx.Node.fromEvent(child, 'close')
+            close: Rx.Node.fromEvent(child, 'close'),
+            message: Rx.Node.fromEvent(child, 'message')
         };
         if (!config.raw) {
             childStreams.stdout = Rx.Node.fromReadableStream(child.stdout);
@@ -282,24 +284,11 @@ function handleClose(streams, children, childrenInfo) {
     var closeStreams = _.map(streams, 'close');
     var closeStream = Rx.Observable.merge.apply(this, closeStreams);
 
-    // TODO: Is it possible that amount of close events !== count of spawned?
-    closeStream.subscribe(function(event) {
-        var exitCode = event.data;
-        exitCodes.push(exitCode);
+    var messageStreams = _.map(streams, 'message');
+    var messageStream = Rx.Observable.merge.apply(this, messageStreams);
 
-        var prefix = getPrefix(childrenInfo, event.child);
-        var prefixColor = childrenInfo[event.child.pid].prefixColor;
-        var command = childrenInfo[event.child.pid].command;
-        logEvent(prefix, prefixColor, command + ' exited with code ' + exitCode);
-
-        aliveChildren = _.filter(aliveChildren, function(child) {
-            return child.pid !== event.child.pid;
-        });
-
-        if (aliveChildren.length === 0) {
-            exit(exitCodes);
-        }
-    });
+    messageStream.subscribe(handleStreamSubscribe('message'));
+    closeStream.subscribe(handleStreamSubscribe('close'));
 
     if (config.killOthers) {
         // Give other processes some time to stop cleanly before killing them
@@ -317,6 +306,32 @@ function handleClose(streams, children, childrenInfo) {
                 }
             });
         });
+    }
+
+    // TODO: Is it possible that amount of close events !== count of spawned?
+    function handleStreamSubscribe(closeEvent) {
+        var streamMessage = closeEvent === 'close' ? 'exited with code' : 'sent a message of'
+        return function(event) {
+            var exitCode = event.data;
+            exitCodes.push(exitCode);
+
+            var prefix = getPrefix(childrenInfo, event.child);
+            var prefixColor = childrenInfo[event.child.pid].prefixColor;
+            var command = childrenInfo[event.child.pid].command;
+            logEvent(prefix, prefixColor, command + ' ' + streamMessage + ' ' + exitCode);
+
+            aliveChildren = _.filter(aliveChildren, function(child) {
+                return child.pid !== event.child.pid;
+            });
+
+            // TODO
+            // 1. if a message is `1`, kill that process. the alternative is run `process.exit(1)` within your file but could be nicer to keep the requirement to `process.send(0)` or `process.send(1)`
+            // 2. if we had sent a message, instead of running `exit`, run the specified command under the `a` command line option
+
+            if (aliveChildren.length === 0) {
+                exit(exitCodes);
+            }
+        }
     }
 }
 

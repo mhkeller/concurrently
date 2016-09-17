@@ -40,6 +40,14 @@ describe('concurrently', function() {
         });
     });
 
+    it('one successful command should exit 0', function(done) {
+        run('node ./src/main.js "echo"', {pipe: DEBUG_TESTS})
+        .then(function(exitCode) {
+            assert.strictEqual(exitCode, 0);
+            done();
+        });
+    });
+
     it('at least one unsuccessful commands should exit non-zero', function(done) {
         run('node ./src/main.js "echo" "return 1" "echo"', {pipe: DEBUG_TESTS})
         .then(function(exitCode) {
@@ -71,6 +79,22 @@ describe('concurrently', function() {
         run('node ./src/main.js -k --success last "echo" "sleep 1000" ', {pipe: DEBUG_TESTS})
         .then(function(exitCode) {
             assert.notStrictEqual(exitCode, 0);
+            done();
+        });
+    });
+
+    it('process should send 0 as a done message', function(done) {
+        run('node src/main.js "node test/send-message.js"', {pipe: DEBUG_TESTS})
+        .then(function(exitCode) {
+            assert.strictEqual(exitCode, 0);
+            done();
+        });
+    });
+
+    it('two successful commands should exit 0, one as a message', function(done) {
+        run('node src/main.js "node test/send-message.js" "echo"', {pipe: DEBUG_TESTS})
+        .then(function(exitCode) {
+            assert.strictEqual(exitCode, 0);
             done();
         });
     });

@@ -18,10 +18,11 @@ function run(cmd, opts) {
 
     var child;
     var parts = shellQuote.parse(cmd);
+    var stdio = opts.pipe ? "inherit" : null
     try {
         child = childProcess.spawn(_.head(parts), _.tail(parts), {
             cwd: opts.cwd,
-            stdio: opts.pipe ? "inherit" : null
+            stdio: [stdio, stdio, stdio, 'ipc']
         });
     } catch (e) {
         return Promise.reject(e);
@@ -35,6 +36,10 @@ function run(cmd, opts) {
 
         child.on('close', function(exitCode) {
             resolve(exitCode);
+        });
+
+        child.on('message', function(message) {
+            resolve(message);
         });
     });
 }
